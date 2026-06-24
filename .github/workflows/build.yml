@@ -28,7 +28,6 @@ jobs:
             python3 \
             python3-dev \
             python3-pip \
-            python3-venv \
             zip \
             unzip \
             autoconf \
@@ -37,36 +36,60 @@ jobs:
             zlib1g-dev \
             libffi-dev \
             libssl-dev \
-            cmake
+            cmake \
+            wget
           sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
-      
-      - name: Verify Java
-        run: |
-          java -version
-          echo "JAVA_HOME=$JAVA_HOME"
       
       - name: Install Python build tools
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.33
       
+      - name: Install Android SDK build-tools
+        run: |
+          # Создаём папку для Android SDK
+          mkdir -p $HOME/android-sdk
+          cd $HOME/android-sdk
+          
+          # Скачиваем cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/bin cmdline-tools/lib cmdline-tools/NOTICE.txt cmdline-tools/source.properties cmdline-tools/latest/ 2>/dev/null || true
+          
+          # Принимаем лицензии
+          yes | cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk --licenses || true
+          
+          # Устанавливаем build-tools и platform-tools
+          cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
+            "build-tools;33.0.2" \
+            "platform-tools" \
+            "platforms;android-33"
+          
+          # Устанавливаем переменные окружения
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
+      
+      - name: Verify Android SDK
+        run: |
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          ls -la $ANDROID_HOME/build-tools/ || echo "build-tools not found"
+          ls -la $ANDROID_HOME/build-tools/33.0.2/ || echo "33.0.2 not found"
+          which aidl || echo "aidl not in PATH"
+          $ANDROID_HOME/build-tools/33.0.2/aidl --version || echo "aidl check failed"
+      
       - name: Build APK
         run: |
           echo "Starting build..."
           ls -la
-          cat buildozer.spec | head -20
           buildozer android debug
         env:
           BUILDOZER_WARN_ON_ROOT: 0
-      
-      - name: Check build output
-        if: always()
-        run: |
-          echo "=== Build directory ==="
-          ls -la
-          echo "=== Bin directory ==="
-          ls -la bin/ || echo "bin/ not found"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
       
       - name: Upload APK
         if: success()
@@ -75,4 +98,3 @@ jobs:
           name: AppPomodoro-APK
           path: bin/*.apk
           retention-days: 30
-          if-no-files-found: error
