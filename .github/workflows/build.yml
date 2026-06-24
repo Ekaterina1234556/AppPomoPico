@@ -44,42 +44,50 @@ jobs:
       
       - name: Install Android SDK to Buildozer path
         run: |
-          # ВАЖНО: путь Buildozer к SDK
+          # Путь Buildozer к SDK
           BUILDOZER_SDK_PATH="/home/runner/.buildozer/android/platform/android-sdk"
-          mkdir -p "$BUILDOZER_SDK_PATH/cmdline-tools"
+          mkdir -p "$BUILDOZER_SDK_PATH"
           
           echo "Installing SDK to: $BUILDOZER_SDK_PATH"
           
-          # Скачиваем cmdline-tools (версия 9.0 - совместима с Java 17)
+          # Скачиваем cmdline-tools (версия 9.0)
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           cd /tmp && unzip -q cmdline-tools.zip
+          
+          # Устанавливаем в новую структуру (cmdline-tools/latest)
+          mkdir -p "$BUILDOZER_SDK_PATH/cmdline-tools"
           mv cmdline-tools "$BUILDOZER_SDK_PATH/cmdline-tools/latest"
           
-          # Проверяем, что cmdline-tools установлен
-          ls -la "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/"
+          # ⭐ ВАЖНО: Создаём симлинк tools -> cmdline-tools/latest
+          # Buildozer ищет sdkmanager в tools/bin/, а не в cmdline-tools/latest/bin/
+          mkdir -p "$BUILDOZER_SDK_PATH/tools"
+          ln -s "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin" "$BUILDOZER_SDK_PATH/tools/bin"
+          ln -s "$BUILDOZER_SDK_PATH/cmdline-tools/latest/lib" "$BUILDOZER_SDK_PATH/tools/lib"
+          
+          # Проверяем, что симлинк работает
+          echo "=== Checking symlink ==="
+          ls -la "$BUILDOZER_SDK_PATH/tools/"
+          ls -la "$BUILDOZER_SDK_PATH/tools/bin/"
+          test -f "$BUILDOZER_SDK_PATH/tools/bin/sdkmanager" && echo "✅ sdkmanager found via symlink" || echo "❌ sdkmanager NOT found"
           
           # Принимаем лицензии
-          yes | "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" --licenses || true
+          yes | "$BUILDOZER_SDK_PATH/tools/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" --licenses || true
           
-          # Устанавливаем build-tools 33.0.2 И platform-tools
-          "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" \
+          # Устанавливаем build-tools и platform-tools
+          "$BUILDOZER_SDK_PATH/tools/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" \
             "build-tools;33.0.2" \
             "platform-tools" \
             "platforms;android-33"
           
           # Проверяем установку
           echo "=== Checking build-tools ==="
-          ls -la "$BUILDOZER_SDK_PATH/build-tools/"
-          ls -la "$BUILDOZER_SDK_PATH/build-tools/33.0.2/"
-          
-          # Проверяем наличие aidl
-          echo "=== Checking aidl ==="
-          ls -la "$BUILDOZER_SDK_PATH/build-tools/33.0.2/aidl"
+          ls -la "$BUILDOZER_SDK_PATH/build-tools/" || echo "build-tools not found"
+          ls -la "$BUILDOZER_SDK_PATH/build-tools/33.0.2/aidl" || echo "aidl not found"
           
           # Устанавливаем переменные окружения
           echo "ANDROID_HOME=$BUILDOZER_SDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$BUILDOZER_SDK_PATH" >> $GITHUB_ENV
-          echo "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$BUILDOZER_SDK_PATH/tools/bin" >> $GITHUB_PATH
           echo "$BUILDOZER_SDK_PATH/platform-tools" >> $GITHUB_PATH
           echo "$BUILDOZER_SDK_PATH/build-tools/33.0.2" >> $GITHUB_PATH
       
@@ -87,7 +95,10 @@ jobs:
         run: |
           echo "Starting build..."
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -la $ANDROID_HOME/build-tools/ || echo "build-tools not found"
+          echo "=== SDK structure ==="
+          ls -la $ANDROID_HOME/
+          ls -la $ANDROID_HOME/tools/ || echo "tools/ not found"
+          ls -la $ANDROID_HOME/build-tools/ || echo "build-tools/ not found"
           buildozer android debug
         env:
           BUILDOZER_WARN_ON_ROOT: 0
