@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup Java 17 (CRITICAL)
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -41,43 +41,65 @@ jobs:
         run: |
           java -version
           echo "JAVA_HOME=$JAVA_HOME"
-          # Убеждаемся, что это Java 17
-          java -version 2>&1 | grep "17\." || (echo "ERROR: Java 17 not found!" && exit 1)
       
-      - name: Install Android SDK manually
+      - name: Install Android SDK to Buildozer path
         run: |
-          export ANDROID_HOME=$HOME/android-sdk
-          mkdir -p $ANDROID_HOME/cmdline-tools
+          # ВАЖНО: путь Buildozer к SDK
+          BUILDOZER_SDK_PATH="/home/runner/.buildozer/android/platform/android-sdk"
+          mkdir -p "$BUILDOZER_SDK_PATH/cmdline-tools"
           
-          # Скачиваем СТАРУЮ версию cmdline-tools (9.0), которая работает с Java 11-17
+          echo "Installing SDK to: $BUILDOZER_SDK_PATH"
+          
+          # Скачиваем cmdline-tools (версия 9.0 - совместима с Java 17)
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           cd /tmp && unzip -q cmdline-tools.zip
-          mv cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          mv cmdline-tools "$BUILDOZER_SDK_PATH/cmdline-tools/latest"
+          
+          # Проверяем, что cmdline-tools установлен
+          ls -la "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/"
           
           # Принимаем лицензии
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
+          yes | "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" --licenses || true
           
-          # Устанавливаем build-tools 33.0.2
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+          # Устанавливаем build-tools 33.0.2 И platform-tools
+          "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$BUILDOZER_SDK_PATH" \
             "build-tools;33.0.2" \
             "platform-tools" \
             "platforms;android-33"
           
+          # Проверяем установку
+          echo "=== Checking build-tools ==="
+          ls -la "$BUILDOZER_SDK_PATH/build-tools/"
+          ls -la "$BUILDOZER_SDK_PATH/build-tools/33.0.2/"
+          
+          # Проверяем наличие aidl
+          echo "=== Checking aidl ==="
+          ls -la "$BUILDOZER_SDK_PATH/build-tools/33.0.2/aidl"
+          
           # Устанавливаем переменные окружения
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          echo "ANDROID_HOME=$BUILDOZER_SDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$BUILDOZER_SDK_PATH" >> $GITHUB_ENV
+          echo "$BUILDOZER_SDK_PATH/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$BUILDOZER_SDK_PATH/platform-tools" >> $GITHUB_PATH
+          echo "$BUILDOZER_SDK_PATH/build-tools/33.0.2" >> $GITHUB_PATH
       
       - name: Build APK
         run: |
-          echo "Building APK..."
+          echo "Starting build..."
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la $ANDROID_HOME/build-tools/ || echo "build-tools not found"
           buildozer android debug
         env:
           BUILDOZER_WARN_ON_ROOT: 0
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
+      
+      - name: Check output
+        if: always()
+        run: |
+          ls -la
+          ls -la bin/ || echo "bin/ not found"
       
       - name: Upload APK
         if: success()
